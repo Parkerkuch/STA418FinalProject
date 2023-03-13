@@ -51,7 +51,7 @@ gunData %>% pull(n_killed) %>% summary()
 ```
 
 ```{r}
-#Summary statistics for number of people killed
+#Summary statistics for number of people injured
 gunData %>% pull(n_injured) %>% summary()
 
 ```
