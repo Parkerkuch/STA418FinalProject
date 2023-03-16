@@ -90,7 +90,51 @@ gunData4 %>% ggplot(aes(x = year,
   scale_y_continuous(labels = scales::comma)
 ```
 
+## Creating Data Dictionary
+```{r}
+# Creating data dictionary. 
+# Note penguins will need to be replaced with your own data set, and 
+# the variable descriptions should be updated as well.
+dataDictionary <- tibble(Variable = colnames(gunData),
+                         Description = c("gunviolencearchive.org ID for incident",
+                                         "date of occurrence",
+                                         "state",
+                                         "city or county",
+                                         "address where incident took place",
+                                         "number of people killed",
+                                         "number of people injured",
+                                         "link to gunviolencearchive.org webpage containing details of incident",
+                                         "link to online news story concerning incident",
+                                         "ignore, always False",
+                                         "Congressional district",
+                                         "gun stolen or not, e.g. 'Unknown' or 'Stolen'",
+                                         "description of gun type",
+                                         "list of incident characteristics",
+                                         "latitude of location",
+                                         "description of location where incident took place",
+                                         "longitude of location",
+                                         "number of guns involved",
+                                         "additional notes about the incident",
+                                         "participant age",
+                                         "participant description of age group, e.g. 'Adult 18+'",
+                                         "participant gender being 'Male' or 'Female'",
+                                         "participant name",
+                                         "relationship of participant to other participants",
+                                         "outcome, one of 'Arrested', 'Killed', 'Injured', or 'Unharmed'",
+                                         "participant category being 'Victim' or 'Subject-Suspect'",
+                                         "links to online news stories concerning incident",
+                                         "state house district",
+                                         "state senate district",
+                                         "full address"),
+                         Type = map_chr(gunData, .f = function(x){typeof(x)[1]}),
+                         Class = map_chr(gunData, .f = function(x){class(x)[1]}))
+```
 
+
+
+```{r}
+flextable::flextable(dataDictionary, cwidth = 2)
+```
 
 
 
