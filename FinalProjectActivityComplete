@@ -1,0 +1,140 @@
+---
+title: "Final Project Activity 1"
+author: "Parker Kuchulan & Bradley Monarch"
+date: "`r format(Sys.Date(), '%m/%d/%Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE, eval = TRUE,
+                      message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+```
+
+
+## Import Data
+
+```{r}
+gunData <- data.table::fread("gunViolenceFull.csv")
+```
+
+## Explore and display high-level characteristics of your data set, e.g., important variables and their types, different levels for factor variables, any patterns of missing values.
+
+```{r}
+summary(gunData)
+glimpse(gunData)
+skim(gunData)
+```
+
+## Obtain at least two tables of group-level summary statistics for quantitative variables in your data set.
+
+```{r}
+#Summary statistics for number of people killed
+gunData %>% pull(n_killed) %>% summary()
+```
+
+```{r}
+#Summary statistics for number of people injured
+gunData %>% pull(n_injured) %>% summary()
+```
+
+## Obtain at least one frequency table showing the cross-section of two categorical variables in your data set.
+```{r}
+#Freq table for state totals of killed and injured
+stateCount <- gunData %>% mutate(fatal = n_killed > 0) %>% 
+  mutate(type = ifelse(fatal == FALSE, "Injured", "Killed"))
+stateCount %>% count(state, fatal)
+```
+
+```{r}
+#New dataset for properly formated dates
+gunDataT <- stateCount %>% mutate(year = lubridate::year(date)) 
+
+#Remove years with incomplete data
+gunDataF <- gunDataT %>% filter(year != 2013 & year != 2018)
+```
+
+## Create one ggplot visualization for your data, including appropriate labels with units of measurement when applicable and a specified theme.
+
+```{r}
+#Number of people killed in shootings by year
+gunDataF %>% ggplot(aes(x = year,
+                        y = sum(fatal))) + 
+  geom_col() +
+  labs(title = "Number of people killed in shootings by year",
+       x = "Year",
+       y = "Total people killed") + 
+  theme_bw() +
+  scale_y_continuous(labels = scales::comma)
+```
+
+## New dataframe with state death totals
+```{r}
+stateVictims <- gunData %>%
+  group_by(state) %>% 
+  summarize(totalKilled = sum(n_killed), totalInjured = sum(n_injured))
+```
+
+
+## Creating a GGplot visualization of a bar chart of the states with the top 10 states in number of victims killed 
+```{r}
+stateVictims %>% arrange(desc(totalKilled)) %>%
+  slice_head(n = 10) %>% 
+  ggplot(aes(x = reorder(state, +totalKilled), y = totalKilled)) +
+  geom_col(fill = "#800020", color = "black") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 8), 
+        legend.position = "none") +
+  scale_y_continuous(breaks = c(0, 1000, 2000, 3000, 4000, 5000, 6000), limits = c(0, 6000)) +
+  labs(title = "Top Ten States with the Most Fatalities from Gun Violence (2013-2018)", x = "State", y = "Total Fatalities", caption = "Data Source: Gun Violence Archive (GVA)")
+```
+
+## Creating Data Dictionary
+```{r}
+# Creating data dictionary. 
+dataDictionary <- tibble(Variable = colnames(gunDataT),
+                         Description = c("gunviolencearchive.org ID for incident",
+                                         "date of occurrence",
+                                         "state",
+                                         "city or county",
+                                         "address where incident took place",
+                                         "number of people killed",
+                                         "number of people injured",
+                                         "link to gunviolencearchive.org webpage containing details of incident",
+                                         "link to online news story concerning incident",
+                                         "ignore, always False",
+                                         "Congressional district",
+                                         "gun stolen or not, e.g. 'Unknown' or 'Stolen'",
+                                         "description of gun type",
+                                         "list of incident characteristics",
+                                         "latitude of location",
+                                         "description of location where incident took place",
+                                         "longitude of location",
+                                         "number of guns involved",
+                                         "additional notes about the incident",
+                                         "participant age",
+                                         "participant description of age group, e.g. 'Adult 18+'",
+                                         "participant gender being 'Male' or 'Female'",
+                                         "participant name",
+                                         "relationship of participant to other participants",
+                                         "outcome, one of 'Arrested', 'Killed', 'Injured', or 'Unharmed'",
+                                         "participant category being 'Victim' or 'Subject-Suspect'",
+                                         "links to online news stories concerning incident",
+                                         "state house district",
+                                         "state senate district",
+                                         "full address", "whether the victim was killed or not", "whether the victim was killed or not as a string", "the year of the incident"),
+                         Type = map_chr(gunDataT, .f = function(x){typeof(x)[1]}),
+                         Class = map_chr(gunDataT, .f = function(x){class(x)[1]}))
+```
+
+
+```{r}
+#Initialize dictionary
+flextable::flextable(dataDictionary, cwidth = 2)
+```
+
+
