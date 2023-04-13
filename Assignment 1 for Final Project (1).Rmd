@@ -1,10 +1,8 @@
 ---
-title: "Final Project Assignment 1"
-author: "Bradley Monarch"
-date: "3/13/2023"
-output:
-  rmdformats::material:
-    code_folding: hide
+title: "Final Project Activity 1"
+author: "Parker Kuchulan & Bradley Monarch"
+date: "`r format(Sys.Date(), '%m/%d/%Y')`"
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
@@ -13,27 +11,20 @@ knitr::opts_chunk$set(echo = TRUE, error = TRUE, eval = TRUE,
 ```
 
 ```{r}
-library(data.table)
 library(tidyverse)
-library(knitr)
-library(arrow)
-library(bench)
-library(ggbeeswarm)
-library(haven)
-library(stringr)
 library(lubridate)
-library(ggpubr)
 library(skimr)
 ```
 
 
-### Import Data
+## Import Data
 
 ```{r}
 gunData <- data.table::fread("gunViolenceFull.csv")
+censusData <- data.table::fread('https://raw.githubusercontent.com/dilernia/STA418-518/main/Data/census_data_2008-2021.csv')
 ```
 
-### Explore and display high-level characteristics of your data set, e.g., important variables and their types, different levels for factor variables, any patterns of missing values.
+## Explore and display high-level characteristics of your data set, e.g., important variables and their types, different levels for factor variables, any patterns of missing values.
 
 ```{r}
 summary(gunData)
@@ -41,47 +32,45 @@ glimpse(gunData)
 skim(gunData)
 ```
 
-Obtain at least two tables of group-level summary statistics for quantitative variables in your data set.
-
+## Obtain at least two tables of group-level summary statistics for quantitative variables in your data set.
 
 ```{r}
 #Summary statistics for number of people killed
 gunData %>% pull(n_killed) %>% summary()
-
 ```
 
 ```{r}
 #Summary statistics for number of people injured
 gunData %>% pull(n_injured) %>% summary()
-
 ```
 
-Obtain at least one frequency table showing the cross-section of two categorical variables in your data set.
-
+## Obtain at least one frequency table showing the cross-section of two categorical variables in your data set.
 ```{r}
-
-gunData2 <- gunData %>% mutate(fatal = n_killed >0)
-gunData2 %>% count(state, fatal)
-
-
+#Freq table for state totals of killed and injured
+stateCount <- gunData %>% mutate(fatal = n_killed > 0) %>% 
+  mutate(type = ifelse(fatal == FALSE, "Injured", "Killed"))
+stateCount %>% count(state, fatal)
 ```
 
 ```{r}
-gunData3 <- gunData2 %>% mutate(year = lubridate::year(date))
+#New dataset for properly formated dates
+gunDataT <- stateCount %>% mutate(year = lubridate::year(date)) 
+
+#Remove years with incomplete data
+gunDataF <- gunDataT %>% filter(year != 2013 & year != 2018)
+
+#Remove years from censusData to match gunData
+censusDataF <- censusData %>% filter(year > 2013 && year < 2018)
+#censusData %>% pull(year) %>% skim()
+#censusData %>% count(year)
 ```
 
-Create one ggplot visualizations for your data, including appropriate labels with units of measurement when applicable and a specified theme.
+## Create one ggplot visualization for your data, including appropriate labels with units of measurement when applicable and a specified theme.
 
 ```{r}
-#Drop 2013 and 2018 as there is incomlete data for these years.
-gunData4 <- gunData3 %>% dplyr::filter(year != 2013 & year != 2018)
-```
-
-
-
-```{r}
-gunData4 %>% ggplot(aes(x = year,
-                        y = sum(fatal))) +
+#Number of people killed in shootings by year
+gunDataF %>% ggplot(aes(x = year,
+                        y = sum(fatal))) + 
   geom_col() +
   labs(title = "Number of people killed in shootings by year",
        x = "Year",
@@ -90,12 +79,31 @@ gunData4 %>% ggplot(aes(x = year,
   scale_y_continuous(labels = scales::comma)
 ```
 
+## New dataframe with state death totals
+```{r}
+stateVictims <- gunData %>%
+  group_by(state) %>% 
+  summarize(totalKilled = sum(n_killed), totalInjured = sum(n_injured))
+```
+
+
+## Creating a GGplot visualization of a bar chart of the states with the top 10 states in number of victims killed 
+```{r}
+stateVictims %>% arrange(desc(totalKilled)) %>%
+  slice_head(n = 10) %>% 
+  ggplot(aes(x = reorder(state, +totalKilled), y = totalKilled)) +
+  geom_col(fill = "#800020", color = "black") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 8), 
+        legend.position = "none") +
+  scale_y_continuous(breaks = c(0, 1000, 2000, 3000, 4000, 5000, 6000), limits = c(0, 6000)) +
+  labs(title = "Top Ten States with the Most Fatalities from Gun Violence (2013-2018)", x = "State", y = "Total Fatalities", caption = "Data Source: Gun Violence Archive (GVA)")
+```
+
 ## Creating Data Dictionary
 ```{r}
 # Creating data dictionary. 
-# Note penguins will need to be replaced with your own data set, and 
-# the variable descriptions should be updated as well.
-dataDictionary <- tibble(Variable = colnames(gunData),
+dataDictionary <- tibble(Variable = colnames(gunDataT),
                          Description = c("gunviolencearchive.org ID for incident",
                                          "date of occurrence",
                                          "state",
@@ -125,27 +133,13 @@ dataDictionary <- tibble(Variable = colnames(gunData),
                                          "links to online news stories concerning incident",
                                          "state house district",
                                          "state senate district",
-                                         "full address"),
-                         Type = map_chr(gunData, .f = function(x){typeof(x)[1]}),
-                         Class = map_chr(gunData, .f = function(x){class(x)[1]}))
+                                         "full address", "whether the victim was killed or not", "whether the victim was killed or not as a string", "the year of the incident"),
+                         Type = map_chr(gunDataT, .f = function(x){typeof(x)[1]}),
+                         Class = map_chr(gunDataT, .f = function(x){class(x)[1]}))
 ```
-
 
 
 ```{r}
+#Initialize dictionary
 flextable::flextable(dataDictionary, cwidth = 2)
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
