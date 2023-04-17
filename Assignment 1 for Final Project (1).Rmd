@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE, error = TRUE, eval = TRUE,
                       message = FALSE, warning = FALSE)
 ```
 
-```{r}
+```{r Importing Packages}
 library(tidyverse)
 library(lubridate)
 library(skimr)
@@ -19,14 +19,17 @@ library(skimr)
 
 ## Import Data
 
-```{r}
+```{r Importing Data}
+#GunData
 gunData <- data.table::fread("gunViolenceFull.csv")
+
+#CensusData
 censusData <- data.table::fread('https://raw.githubusercontent.com/dilernia/STA418-518/main/Data/census_data_2008-2021.csv')
 ```
 
 ## Explore and display high-level characteristics of your data set, e.g., important variables and their types, different levels for factor variables, any patterns of missing values.
 
-```{r}
+```{r Exploring Data}
 summary(gunData)
 glimpse(gunData)
 skim(gunData)
@@ -34,40 +37,50 @@ skim(gunData)
 
 ## Obtain at least two tables of group-level summary statistics for quantitative variables in your data set.
 
-```{r}
+```{r nkilled summary}
 #Summary statistics for number of people killed
 gunData %>% pull(n_killed) %>% summary()
 ```
 
-```{r}
+```{r ninjured summary}
 #Summary statistics for number of people injured
 gunData %>% pull(n_injured) %>% summary()
 ```
 
 ## Obtain at least one frequency table showing the cross-section of two categorical variables in your data set.
-```{r}
+```{r Freq Table for state totals of killed and injured}
 #Freq table for state totals of killed and injured
 stateCount <- gunData %>% mutate(fatal = n_killed > 0) %>% 
-  mutate(type = ifelse(fatal == FALSE, "Injured", "Killed"))
-stateCount %>% count(state, fatal)
+  mutate(type_harm = ifelse(fatal == FALSE & n_injured == 0, "Unharmed", 
+                       ifelse(fatal ==  TRUE, "Killed", "Injured")))
+stateCount %>% count(state, type_harm, name = "count")
 ```
 
-```{r}
+
+```{r Data Cleaning}
 #New dataset for properly formated dates
 gunDataT <- stateCount %>% mutate(year = lubridate::year(date)) 
 
 #Remove years with incomplete data
 gunDataF <- gunDataT %>% filter(year != 2013 & year != 2018)
 
-#Remove years from censusData to match gunData
-censusDataF <- censusData %>% filter(year > 2013 && year < 2018)
-#censusData %>% pull(year) %>% skim()
-#censusData %>% count(year)
+#Attempting to extract from address
+gunCounties <- gunDataF %>% extract_counties()
+
+
+#Extract counties from census data
+censusDataF <- censusData %>% filter(year > 2013 & year < 2018)
+
+#Counting year totals
+censusDataF %>% count(year)
+
+#Creating new vars for state and county in census data
+censusDataF <- censusDataF %>% separate(col = county_state, into = c("county", "state"), sep = ",")
 ```
 
 ## Create one ggplot visualization for your data, including appropriate labels with units of measurement when applicable and a specified theme.
 
-```{r}
+```{r GGPlot Num People Killed/Year}
 #Number of people killed in shootings by year
 gunDataF %>% ggplot(aes(x = year,
                         y = sum(fatal))) + 
@@ -76,11 +89,11 @@ gunDataF %>% ggplot(aes(x = year,
        x = "Year",
        y = "Total people killed") + 
   theme_bw() +
-  scale_y_continuous(labels = scales::comma)
+  scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0,0.1)))
 ```
 
 ## New dataframe with state death totals
-```{r}
+```{r New df with state death totals}
 stateVictims <- gunData %>%
   group_by(state) %>% 
   summarize(totalKilled = sum(n_killed), totalInjured = sum(n_injured))
@@ -88,7 +101,7 @@ stateVictims <- gunData %>%
 
 
 ## Creating a GGplot visualization of a bar chart of the states with the top 10 states in number of victims killed 
-```{r}
+```{r Top 10 # of states killed GGPlot} 
 stateVictims %>% arrange(desc(totalKilled)) %>%
   slice_head(n = 10) %>% 
   ggplot(aes(x = reorder(state, +totalKilled), y = totalKilled)) +
@@ -101,7 +114,7 @@ stateVictims %>% arrange(desc(totalKilled)) %>%
 ```
 
 ## Creating Data Dictionary
-```{r}
+```{r Data Dictionary}
 # Creating data dictionary. 
 dataDictionary <- tibble(Variable = colnames(gunDataT),
                          Description = c("gunviolencearchive.org ID for incident",
@@ -139,7 +152,104 @@ dataDictionary <- tibble(Variable = colnames(gunDataT),
 ```
 
 
-```{r}
+```{r Initializing Dict}
 #Initialize dictionary
 flextable::flextable(dataDictionary, cwidth = 2)
 ```
+
+
+
+```{r extract_counties}
+# Create function to extract county / parish, city info
+# Arguments
+# address_info: a tibble or data frame with a variable called address_full
+extract_counties <- function(address_info) {
+  
+  # Calculating maximum number of commas in any address
+  maxCommas <- address_info %>% 
+    dplyr::pull(address_full) %>% 
+    stringr::str_count(pattern = ",") %>% 
+    max(na.rm = TRUE)
+  
+  matchWords <- "County|county|Parish|parish|Municipio|municipio|Municipality|municipality|District of Columbia|City of Baltimore|City of Saint Louis|City of Richmond|City of Norfolk|City of Newport News|City of Virginia Beach|City of Hampton|City of Chesapeake|City of Suffolk|City of Roanoke|City of Portsmouth|City of Alexandria|City of Lynchburg"
+  
+  # Fixing NYC boroughs and other metro names
+  address_info <- address_info %>% 
+    dplyr::mutate(
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Bronx, City of New York", replacement = "Bronx County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Brooklyn, City of New York", replacement = "Kings County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Manhattan, City of New York", replacement = "New York County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Queens, City of New York", replacement = "Queens County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Staten Island, City of New York", replacement = "Richmond County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Baltimore, Maryland", replacement = ", City of Baltimore, Maryland"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", St. Louis, Missouri", replacement = ", City of Saint Louis, Missouri"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Richmond, Virginia", replacement = ", City of Richmond, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Norfolk, Virginia", replacement = ", City of Norfolk, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Newport News, Virginia", replacement = ", City of Newport News, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Virginia Beach, Virginia", replacement = ", City of Virginia Beach, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Hampton, Virginia", replacement = ", City of Hampton, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Chesapeake, Virginia", replacement = ", City of Chesapeake, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Suffolk, Virginia", replacement = ", City of Suffolk, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Roanoke, Virginia", replacement = ", City of Roanoke, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Portsmouth, Virginia", replacement = ", City of Portsmouth, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Alexandria, Virginia", replacement = ", City of Alexandria, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Lynchburg, Virginia", replacement = ", City of Lynchburg, Virginia"))
+  
+  # Extracting county info from addresses (not an easy task!)
+  suppressWarnings({
+    countyParishInfo <- address_info %>% 
+      tidyr::separate(col = address_full, remove = FALSE, sep = ",", 
+                      into = paste0("addr_info_", 1:(maxCommas + 1))) %>%
+      dplyr::select(address_full, tidyselect::starts_with("addr_info_")) %>% 
+      dplyr::mutate(ID = 1:n()) %>% 
+      tidyr::pivot_longer(cols = tidyselect::starts_with("addr_info_"), names_to = "Component", values_to = "county_parish_city") %>%
+      dplyr::filter(stringr::str_detect(county_parish_city, pattern = matchWords)) %>% 
+      dplyr::group_by(ID) %>% 
+      dplyr::slice_tail(n = 1) %>% 
+      dplyr::ungroup() %>% 
+      dplyr::select(address_full, county_parish_city) %>% 
+      dplyr::mutate(county_parish_city = stringr::str_remove_all(county_parish_city, pattern = "City of "))
+  })
+  
+  # Adding state names
+  suppressMessages({
+    stateCommas <- paste0(", ", state.name, ",")
+    countyParishInfo$state <- purrr::map(.x = stateCommas,
+                                         .f = function(state) {
+                                           stringr::str_detect(countyParishInfo$address_full, pattern = state)
+                                         }) %>% 
+      dplyr::bind_cols() %>% 
+      as.matrix() %>% 
+      t() %>% 
+      apply(MARGIN = 2, FUN = function(x){state.name[x][1]}, simplify = TRUE)
+  })
+  
+  # Fixing issue with Washington DC
+  countyParishInfo <- countyParishInfo %>% 
+    dplyr::mutate(county_parish_city = stringr::str_squish(county_parish_city),
+                  state = dplyr::case_when(county_parish_city == "District of Columbia" ~ "District of Columbia",
+                                           TRUE ~ state))
+  
+  return(countyParishInfo)
+}
+```
+
+
