@@ -30,9 +30,9 @@ censusData <- data.table::fread('https://raw.githubusercontent.com/dilernia/STA4
 ## Explore and display high-level characteristics of your data set, e.g., important variables and their types, different levels for factor variables, any patterns of missing values.
 
 ```{r Exploring Data}
-summary(gunData)
-glimpse(gunData)
-skim(gunData)
+#summary(gunData)
+#glimpse(gunData)
+#skim(gunData)
 ```
 
 ## Obtain at least two tables of group-level summary statistics for quantitative variables in your data set.
@@ -64,8 +64,47 @@ gunDataT <- stateCount %>% mutate(year = lubridate::year(date))
 #Remove years with incomplete data
 gunDataF <- gunDataT %>% filter(year != 2013 & year != 2018)
 
+#Extracting Year
+gunDataF <- gunDataF %>% mutate(month = lubridate::month(date))
+gunDataF <- gunDataF %>% mutate(month_name = month(date, label = TRUE))
+
+gunDataF2 <- gunDataF %>% select(date, year, month_name, state, city_or_county, n_killed, n_injured, incident_characteristics, participant_age_group, participant_gender, participant_type, type_harm)
+
+#df for state num sums
+stateGun <- gunDataF2 %>% select(year, state, type_harm)
+
+#tidying new df for state num sums
+#Creating df with binary 1 or 0 based on type of incident
+stateGun2 <- stateGun %>% group_by(state, year) %>% 
+  mutate(
+    injured = case_when(
+      type_harm == "Injured" ~ 1,
+      TRUE ~ 0
+    ),
+    killed = case_when(
+      type_harm == "Killed" ~ 1,
+      TRUE ~ 0
+    ),
+    unharmed = case_when(
+      type_harm == "Unharmed" ~ 1,
+      TRUE ~ 0
+    ) 
+  ) %>% summarize(totalInjured = sum(injured), totalKilled = sum(killed), totalUnharmed = sum(unharmed), totalIncidents = totalInjured + totalKilled + totalUnharmed)
+
+#Creating a df with numerical sums by state                                                
+stateGunSums <- stateGun2 %>% 
+  group_by(state, year) %>% 
+  summarize(totalIncidents = totalIncidents, 
+propFatal = round(totalKilled/totalIncidents, 3), 
+propInjured = round(totalInjured/totalIncidents, 3), 
+propUnharmed = round(totalUnharmed/totalIncidents, 3))
+
+stateFatalAvgs <- stateGunSums %>% group_by(state) %>% 
+  summarize(avgPropFatal = mean(propFatal))
+  
+
 #Attempting to extract from address
-gunCounties <- gunDataF %>% extract_counties()
+#gunCounties <- gunDataF %>% extract_counties()
 
 
 #Extract counties from census data
@@ -100,8 +139,22 @@ stateVictims <- gunData %>%
 ```
 
 
+## Creating a GGplot visualization of a bar chart with the highest proportion of incidents resulting in fatalities
+
+```{r 10 Highest props of incidents that resulted in fataities} 
+stateFatalAvgs %>% arrange(desc(avgPropFatal)) %>%
+  slice_head(n = 10) %>% 
+  ggplot(aes(x = reorder(state, +avgPropFatal), y = avgPropFatal)) +
+  geom_col(fill = "#800020", color = "black") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 10), 
+        legend.position = "none") +
+  labs(title = "States with Highest Proportion of Gun Violence Incidents Resulting in Fatalities (2014-2017)", x = "State", y = "Proportion of Fatalities", caption = "Data Source: Gun Violence Archive (GVA)")
+```
 ## Creating a GGplot visualization of a bar chart of the states with the top 10 states in number of victims killed 
+
 ```{r Top 10 # of states killed GGPlot} 
+#Switch to proportion
 stateVictims %>% arrange(desc(totalKilled)) %>%
   slice_head(n = 10) %>% 
   ggplot(aes(x = reorder(state, +totalKilled), y = totalKilled)) +
@@ -111,6 +164,7 @@ stateVictims %>% arrange(desc(totalKilled)) %>%
         legend.position = "none") +
   scale_y_continuous(breaks = c(0, 1000, 2000, 3000, 4000, 5000, 6000), limits = c(0, 6000)) +
   labs(title = "Top Ten States with the Most Fatalities from Gun Violence (2013-2018)", x = "State", y = "Total Fatalities", caption = "Data Source: Gun Violence Archive (GVA)")
+```
 ```
 
 ## Creating Data Dictionary
