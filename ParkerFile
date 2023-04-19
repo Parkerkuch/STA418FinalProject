@@ -99,8 +99,12 @@ propFatal = round(totalKilled/totalIncidents, 3),
 propInjured = round(totalInjured/totalIncidents, 3), 
 propUnharmed = round(totalUnharmed/totalIncidents, 3))
 
-stateFatalAvgs <- stateGunSums %>% group_by(state) %>% 
-  summarize(avgTotalIncidents = mean(totalIncidents), avgPropFatal = mean(propFatal))
+stateFatalAvg2017 <- stateGunSums %>% group_by(state) %>% filter(year == 2017) %>% 
+  summarize(totalIncidents = totalIncidents, propFatal = propFatal)
+
+
+
+##TODO: Group census data to be able to join
   
 
 #Attempting to extract from address
