@@ -100,7 +100,7 @@ propInjured = round(totalInjured/totalIncidents, 3),
 propUnharmed = round(totalUnharmed/totalIncidents, 3))
 
 stateFatalAvgs <- stateGunSums %>% group_by(state) %>% 
-  summarize(avgPropFatal = mean(propFatal))
+  summarize(avgTotalIncidents = mean(totalIncidents), avgPropFatal = mean(propFatal))
   
 
 #Attempting to extract from address
@@ -115,20 +115,6 @@ censusDataF %>% count(year)
 
 #Creating new vars for state and county in census data
 censusDataF <- censusDataF %>% separate(col = county_state, into = c("county", "state"), sep = ",")
-```
-
-## Create one ggplot visualization for your data, including appropriate labels with units of measurement when applicable and a specified theme.
-
-```{r GGPlot Num People Killed/Year}
-#Number of people killed in shootings by year
-gunDataF %>% ggplot(aes(x = year,
-                        y = sum(fatal))) + 
-  geom_col() +
-  labs(title = "Number of people killed in shootings by year",
-       x = "Year",
-       y = "Total people killed") + 
-  theme_bw() +
-  scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0,0.1)))
 ```
 
 ## New dataframe with state death totals
