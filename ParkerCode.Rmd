@@ -1,0 +1,403 @@
+---
+title: "Final Project Activity 1"
+author: "Parker Kuchulan & Bradley Monarch"
+date: "`r format(Sys.Date(), '%m/%d/%Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE, eval = TRUE,
+                      message = FALSE, warning = FALSE)
+```
+
+```{r Importing Packages}
+library(tidyverse)
+library(lubridate)
+library(skimr)
+```
+
+
+## Import Data
+
+```{r Importing Data}
+#GunData
+gunData <- data.table::fread("gunViolenceFull.csv")
+
+#CensusData
+censusData <- data.table::fread('https://raw.githubusercontent.com/dilernia/STA418-518/main/Data/census_data_2008-2021.csv')
+```
+
+## Explore and display high-level characteristics of your data set, e.g., important variables and their types, different levels for factor variables, any patterns of missing values.
+
+```{r Exploring Data}
+#summary(gunData)
+#glimpse(gunData)
+#skim(gunData)
+```
+
+## Obtain at least two tables of group-level summary statistics for quantitative variables in your data set.
+
+```{r nkilled summary}
+#Summary statistics for number of people killed
+gunData %>% pull(n_killed) %>% summary()
+```
+
+```{r ninjured summary}
+#Summary statistics for number of people injured
+gunData %>% pull(n_injured) %>% summary()
+```
+
+## Obtain at least one frequency table showing the cross-section of two categorical variables in your data set.
+```{r Freq Table for state totals of killed and injured}
+#Freq table for state totals of killed and injured
+stateCount <- gunData %>% mutate(fatal = n_killed > 0) %>% 
+  mutate(type_harm = ifelse(fatal == FALSE & n_injured == 0, "Unharmed", 
+                       ifelse(fatal ==  TRUE, "Killed", "Injured")))
+stateCount %>% count(state, type_harm, name = "count")
+```
+
+
+```{r Data Cleaning}
+#New dataset for properly formated dates
+gunDataT <- stateCount %>% mutate(year = lubridate::year(date)) 
+
+#Remove years with incomplete data
+gunDataF <- gunDataT %>% filter(year != 2013 & year != 2018)
+
+#Extracting Year
+gunDataF <- gunDataF %>% mutate(month = lubridate::month(date))
+gunDataF <- gunDataF %>% mutate(month_name = month(date, label = TRUE))
+
+gunDataF2 <- gunDataF %>% select(date, year, month_name, state, city_or_county, n_killed, n_injured, incident_characteristics, participant_age_group, participant_gender, participant_type, type_harm)
+
+#df for state num sums
+stateGun <- gunDataF2 %>% select(year, state, type_harm)
+
+#tidying new df for state num sums
+#Creating df with binary 1 or 0 based on type of incident
+stateGun2 <- stateGun %>% group_by(state, year) %>% 
+  mutate(
+    injured = case_when(
+      type_harm == "Injured" ~ 1,
+      TRUE ~ 0
+    ),
+    killed = case_when(
+      type_harm == "Killed" ~ 1,
+      TRUE ~ 0
+    ),
+    unharmed = case_when(
+      type_harm == "Unharmed" ~ 1,
+      TRUE ~ 0
+    ) 
+  ) %>% summarize(totalInjured = sum(injured), totalKilled = sum(killed), totalUnharmed = sum(unharmed), totalIncidents = totalInjured + totalKilled + totalUnharmed)
+
+#Creating a df with numerical sums by state                                                
+stateGunSums <- stateGun2 %>% 
+  group_by(state, year) %>% 
+  summarize(totalIncidents = totalIncidents, 
+propFatal = round(totalKilled/totalIncidents, 3), 
+propInjured = round(totalInjured/totalIncidents, 3), 
+propUnharmed = round(totalUnharmed/totalIncidents, 3))
+
+stateFatalAvg2017 <- stateGunSums %>% group_by(state) %>% filter(year == 2017) %>% 
+  summarize(totalIncidents = totalIncidents, propFatal = propFatal)
+
+
+
+##TODO: Group census data to be able to join
+census2017 <- censusDataF %>% filter(year == 2017)
+census2017 <- census2017 %>% group_by(state) %>% summarize(totalPopulation = sum(population))
+census2017 <- census2017 %>% drop_na()
+
+#census data has space in front of each state, so start character at 2
+census2017 <- census2017 %>% mutate(state = str_sub(state, start = 2))
+
+gunCensus2017 <- stateFatalAvg2017 %>% left_join(census2017,
+                                    by = 'state')
+
+
+
+#Attempting to extract from address
+#gunCounties <- gunDataF %>% extract_counties()
+
+
+#Extract counties from census data
+censusDataF <- censusData %>% filter(year > 2013 & year < 2018)
+
+#Counting year totals
+censusDataF %>% count(year)
+
+#Creating new vars for state and county in census data
+censusDataF <- censusDataF %>% separate(col = county_state, into = c("county", "state"), sep = ",")
+```
+
+## Fetching and Importing State Shape Data
+
+```{r import state shape data}
+# Downloading state-level shape files from US Census Bureau
+if(!file.exists("cb_2018_us_state_500k.zip")) {
+download.file(url = "https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_state_500k.zip",
+              destfile = "cb_2018_us_state_500k.zip")
+}
+
+# Create directory for geospatial files
+if(!dir.exists("GeoFiles")) {
+dir.create("GeoFiles")
+}
+
+# Unzipping files
+utils::unzip("cb_2018_us_state_500k.zip",
+             exdir = "GeoFiles")
+
+# Loading the shapefiles
+state_shape <- st_read("GeoFiles//cb_2018_us_state_500k.shp")
+```
+
+## Merge shape data with gunCensus2017
+```{r Merging shape data with gunCensus data}
+fullGunCensus <- gunCensus2017 %>% left_join(state_shape,
+                                             by = c('state' = 'NAME'))
+
+```
+
+
+## Creating choropleth map for gun incidents per 100,000 people
+```{r Choropleth map gun incidents per 100,000 people}
+# Create new metric for gun incidents per 100,000 people
+fullGunCensus <- fullGunCensus %>% mutate(newPop = totalPopulation / 100000)
+ggMapData <- fullGunCensus %>% mutate(normalizedInc = totalIncidents / newPop)
+
+#install Libraries
+library(sf)
+library(tigris)
+
+# Convert ggMapData to sf object
+ggMapData_sf <- st_as_sf(ggMapData)
+
+# Fixing issue with Alaska and Hawaii
+ggMapDataFix <- ggMapData_sf %>% 
+  tigris::shift_geometry()
+
+
+# Plot it
+incidentGG <- ggMapDataFix %>% 
+  ggplot(aes(fill = normalizedInc)) +
+  geom_sf() +
+  scale_fill_gradient(low = "white", high = "dodgerblue") +
+  labs(title = "State-level gun incidents per 100,000 people, 2021", fill = "Gun Incidents per 100,000 people") +
+  theme_void()
+
+incidentGG
+```
+
+## New dataframe with monthly death totals
+```{r New df with monthly death totals}
+monthVictims <- gunDataF %>%
+  group_by(month_name, year) %>% 
+  summarize(totalKilled = sum(n_killed), totalInjured = sum(n_injured))
+```
+
+```{r}
+#Turn year variable into factor type
+monthVictims$year <- as.character(monthVictims$year)
+```
+
+
+
+## GGplot 
+```{r GGPlot Num People Killed by month}
+#Number of people killed in shootings by month per year
+
+monthVictims %>% ggplot(aes(x = month_name,
+                        y = totalKilled,
+                        color = year,
+                        group = year)) + 
+  geom_line() +
+  labs(title = "Number of people killed in shootings each month per year",
+       x = "Month",
+       y = "Total people killed",
+       caption = "Data source: Gun Violence Archive (GVA)",
+       color = "Year") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 8)) +
+  scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0,0.1))) +
+  ylim(0,NA)
+```
+
+
+
+## New dataframe with state death totals
+```{r New df with state death totals}
+stateVictims <- gunData %>%
+  group_by(state) %>% 
+  summarize(totalKilled = sum(n_killed), totalInjured = sum(n_injured))
+```
+
+
+## Creating a GGplot visualization of a bar chart with the highest proportion of incidents resulting in fatalities
+
+```{r 10 Highest props of incidents that resulted in fataities} 
+stateFatalAvg2017 %>% arrange(desc(propFatal)) %>%
+  slice_head(n = 10) %>% 
+  ggplot(aes(x = reorder(state, +propFatal), y = propFatal)) +
+  geom_col(fill = "#800020", color = "black") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 10), 
+        legend.position = "none") +
+  labs(title = "States with Highest Proportion of Gun Violence Incidents Resulting in Fatalities (2014-2017)", x = "State", y = "Proportion of Fatalities", caption = "Data Source: Gun Violence Archive (GVA)")
+```
+## Creating a GGplot visualization of a bar chart of the states with the top 10 states in number of victims killed 
+
+```{r Top 10 # of states killed GGPlot} 
+#Switch to proportion
+stateVictims %>% arrange(desc(totalKilled)) %>%
+  slice_head(n = 10) %>% 
+  ggplot(aes(x = reorder(state, +totalKilled), y = totalKilled)) +
+  geom_col(fill = "#800020", color = "black") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 8), 
+        legend.position = "none") +
+  scale_y_continuous(breaks = c(0, 1000, 2000, 3000, 4000, 5000, 6000), limits = c(0, 6000)) +
+  labs(title = "Top Ten States with the Most Fatalities from Gun Violence (2013-2018)", x = "State", y = "Total Fatalities", caption = "Data Source: Gun Violence Archive (GVA)")
+```
+```
+
+## Creating Data Dictionary
+```{r Data Dictionary}
+# Creating data dictionary. 
+dataDictionary <- tibble(Variable = colnames(gunDataT),
+                         Description = c("gunviolencearchive.org ID for incident",
+                                         "date of occurrence",
+                                         "state",
+                                         "city or county",
+                                         "address where incident took place",
+                                         "number of people killed",
+                                         "number of people injured",
+                                         "link to gunviolencearchive.org webpage containing details of incident",
+                                         "link to online news story concerning incident",
+                                         "ignore, always False",
+                                         "Congressional district",
+                                         "gun stolen or not, e.g. 'Unknown' or 'Stolen'",
+                                         "description of gun type",
+                                         "list of incident characteristics",
+                                         "latitude of location",
+                                         "description of location where incident took place",
+                                         "longitude of location",
+                                         "number of guns involved",
+                                         "additional notes about the incident",
+                                         "participant age",
+                                         "participant description of age group, e.g. 'Adult 18+'",
+                                         "participant gender being 'Male' or 'Female'",
+                                         "participant name",
+                                         "relationship of participant to other participants",
+                                         "outcome, one of 'Arrested', 'Killed', 'Injured', or 'Unharmed'",
+                                         "participant category being 'Victim' or 'Subject-Suspect'",
+                                         "links to online news stories concerning incident",
+                                         "state house district",
+                                         "state senate district",
+                                         "full address", "whether the victim was killed or not", "whether the victim was killed or not as a string", "the year of the incident"),
+                         Type = map_chr(gunDataT, .f = function(x){typeof(x)[1]}),
+                         Class = map_chr(gunDataT, .f = function(x){class(x)[1]}))
+```
+
+
+```{r Initializing Dict}
+#Initialize dictionary
+flextable::flextable(dataDictionary, cwidth = 2)
+```
+
+
+
+```{r extract_counties}
+# Create function to extract county / parish, city info
+# Arguments
+# address_info: a tibble or data frame with a variable called address_full
+extract_counties <- function(address_info) {
+  
+  # Calculating maximum number of commas in any address
+  maxCommas <- address_info %>% 
+    dplyr::pull(address_full) %>% 
+    stringr::str_count(pattern = ",") %>% 
+    max(na.rm = TRUE)
+  
+  matchWords <- "County|county|Parish|parish|Municipio|municipio|Municipality|municipality|District of Columbia|City of Baltimore|City of Saint Louis|City of Richmond|City of Norfolk|City of Newport News|City of Virginia Beach|City of Hampton|City of Chesapeake|City of Suffolk|City of Roanoke|City of Portsmouth|City of Alexandria|City of Lynchburg"
+  
+  # Fixing NYC boroughs and other metro names
+  address_info <- address_info %>% 
+    dplyr::mutate(
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Bronx, City of New York", replacement = "Bronx County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Brooklyn, City of New York", replacement = "Kings County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Manhattan, City of New York", replacement = "New York County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Queens, City of New York", replacement = "Queens County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = "Staten Island, City of New York", replacement = "Richmond County,"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Baltimore, Maryland", replacement = ", City of Baltimore, Maryland"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", St. Louis, Missouri", replacement = ", City of Saint Louis, Missouri"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Richmond, Virginia", replacement = ", City of Richmond, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Norfolk, Virginia", replacement = ", City of Norfolk, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Newport News, Virginia", replacement = ", City of Newport News, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Virginia Beach, Virginia", replacement = ", City of Virginia Beach, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Hampton, Virginia", replacement = ", City of Hampton, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Chesapeake, Virginia", replacement = ", City of Chesapeake, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Suffolk, Virginia", replacement = ", City of Suffolk, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Roanoke, Virginia", replacement = ", City of Roanoke, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Portsmouth, Virginia", replacement = ", City of Portsmouth, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Alexandria, Virginia", replacement = ", City of Alexandria, Virginia"),
+      address_full = stringr::str_replace_all(address_full,
+                                              pattern = ", Lynchburg, Virginia", replacement = ", City of Lynchburg, Virginia"))
+  
+  # Extracting county info from addresses (not an easy task!)
+  suppressWarnings({
+    countyParishInfo <- address_info %>% 
+      tidyr::separate(col = address_full, remove = FALSE, sep = ",", 
+                      into = paste0("addr_info_", 1:(maxCommas + 1))) %>%
+      dplyr::select(address_full, tidyselect::starts_with("addr_info_")) %>% 
+      dplyr::mutate(ID = 1:n()) %>% 
+      tidyr::pivot_longer(cols = tidyselect::starts_with("addr_info_"), names_to = "Component", values_to = "county_parish_city") %>%
+      dplyr::filter(stringr::str_detect(county_parish_city, pattern = matchWords)) %>% 
+      dplyr::group_by(ID) %>% 
+      dplyr::slice_tail(n = 1) %>% 
+      dplyr::ungroup() %>% 
+      dplyr::select(address_full, county_parish_city) %>% 
+      dplyr::mutate(county_parish_city = stringr::str_remove_all(county_parish_city, pattern = "City of "))
+  })
+  
+  # Adding state names
+  suppressMessages({
+    stateCommas <- paste0(", ", state.name, ",")
+    countyParishInfo$state <- purrr::map(.x = stateCommas,
+                                         .f = function(state) {
+                                           stringr::str_detect(countyParishInfo$address_full, pattern = state)
+                                         }) %>% 
+      dplyr::bind_cols() %>% 
+      as.matrix() %>% 
+      t() %>% 
+      apply(MARGIN = 2, FUN = function(x){state.name[x][1]}, simplify = TRUE)
+  })
+  
+  # Fixing issue with Washington DC
+  countyParishInfo <- countyParishInfo %>% 
+    dplyr::mutate(county_parish_city = stringr::str_squish(county_parish_city),
+                  state = dplyr::case_when(county_parish_city == "District of Columbia" ~ "District of Columbia",
+                                           TRUE ~ state))
+  
+  return(countyParishInfo)
+}
+```
+
