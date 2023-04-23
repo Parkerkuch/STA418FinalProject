@@ -56,8 +56,6 @@ gunData %>% pull(n_injured) %>% summary()
 stateCount <- gunData %>% mutate(fatal = n_killed > 0) %>% 
   mutate(type_harm = ifelse(fatal == FALSE & n_injured == 0, "Unharmed", 
                        ifelse(fatal ==  TRUE, "Killed", "Injured")))
-
-#stateCount %>% count(state, type_harm, name = "count")
 ```
 
 
@@ -125,6 +123,9 @@ gunStateFatal2017 <- stateFatalAvg2017 %>% left_join(census2017Pop, by = 'state'
 
 #Making df with just state metrics for census data 2017
 censusDataStates <- censusDataF %>% filter(is.na(state) == TRUE) %>% select(-state) %>% rename(state = county) %>% filter(year > 2013 & year < 2018)
+
+censusDataStates2017 <- censusDataStates %>% filter(year == 2017, state != "Puerto Rico")
+
 ```
 
 ```{r New df with state death totals}
@@ -135,9 +136,30 @@ stateVictims <- gunData %>%
 
 
 ## Creating Tables
-```{r Table for top 10 states in 2017 with highest median poverty rate}
-census2017PovMed <- censusDataStates %>% group_by(state) %>% summarize(medPov = median(prop_poverty))
+```{r Table for top 10 states in 2017 with highest median poverty rate and listed median income and pop}
+top10MedPov <- censusDataStates2017 %>% select(state, prop_poverty, population, median_income) %>% arrange(desc(prop_poverty)) %>% 
+  slice_head(n = 10)
+ 
+top10MedPovTable <- flextable(top10MedPov) 
+
+top10MedPovTable %>% set_header_labels(state = "State", prop_poverty = "Proportion Poverty", population = "Population", median_income = "Median Income") %>% set_caption("Table 1: Top 10 States with Highest Median Poverty Rate")
+
+
 ```
+
+```{r Table for top 10 most diverse states}
+censusDataStates2017 <- censusDataStates2017 %>% mutate(prop_diverse = 1 - prop_white)
+
+top10MostDiverse <- censusDataStates2017 %>% select(state, population, prop_diverse) %>% 
+  arrange(-prop_diverse) %>% 
+  slice_head(n = 10)
+
+top10MostDiverseTable <- flextable(top10MostDiverse)
+
+
+top10MostDiverseTable %>% set_header_labels(state = "State", prop_diverse = "Proportion Diverse", population = "Population") %>% set_caption("Table 2: Top 10 Most Diverse States in the US (2017)")
+```
+
 
 
 ## Creating a GGplot visualization of a bar chart with the highest proportion of incidents resulting in fatalities
