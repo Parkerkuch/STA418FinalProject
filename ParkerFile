@@ -2,7 +2,9 @@
 title: "Final Project Activity 1"
 author: "Parker Kuchulan & Bradley Monarch"
 date: "`r format(Sys.Date(), '%m/%d/%Y')`"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -18,6 +20,7 @@ library(tigris)
 library(sf)
 library(leaflet)
 library(flextable)
+library(plotly)
 ```
 
 
@@ -31,37 +34,66 @@ gunData <- data.table::fread("gunViolenceFull.csv")
 censusData <- data.table::fread('https://raw.githubusercontent.com/dilernia/STA418-518/main/Data/census_data_2008-2021.csv')
 ```
 
-### EDA
+## Creating Data Dictionary
 
-```{r Exploring Data}
-#summary(gunData)
-#glimpse(gunData)
-#skim(gunData)
-```
-
-### Summary Stats
-
-```{r nkilled summary}
-#Summary statistics for number of people killed
-gunData %>% pull(n_killed) %>% summary()
-```
-
-```{r ninjured summary}
-#Summary statistics for number of people injured
-gunData %>% pull(n_injured) %>% summary()
-```
-
-## Data Cleaning
 ```{r Creating vars for type of incident}
 stateCount <- gunData %>% mutate(fatal = n_killed > 0) %>% 
   mutate(type_harm = ifelse(fatal == FALSE & n_injured == 0, "Unharmed", 
                        ifelse(fatal ==  TRUE, "Killed", "Injured")))
 ```
 
-
-```{r Data Cleaning}
+```{r Formatting Dates}
 #New dataset for properly formated dates
 gunDataT <- stateCount %>% mutate(year = lubridate::year(date)) 
+```
+
+```{r Data Dictionary}
+# Creating data dictionary. 
+dataDictionary <- tibble(Variable = colnames(gunDataT),
+                         Description = c("gunviolencearchive.org ID for incident",
+                                         "date of occurrence",
+                                         "state",
+                                         "city or county",
+                                         "address where incident took place",
+                                         "number of people killed",
+                                         "number of people injured",
+                                         "link to gunviolencearchive.org webpage containing details of incident",
+                                         "link to online news story concerning incident",
+                                         "ignore, always False",
+                                         "Congressional district",
+                                         "gun stolen or not, e.g. 'Unknown' or 'Stolen'",
+                                         "description of gun type",
+                                         "list of incident characteristics",
+                                         "latitude of location",
+                                         "description of location where incident took place",
+                                         "longitude of location",
+                                         "number of guns involved",
+                                         "additional notes about the incident",
+                                         "participant age",
+                                         "participant description of age group, e.g. 'Adult 18+'",
+                                         "participant gender being 'Male' or 'Female'",
+                                         "participant name",
+                                         "relationship of participant to other participants",
+                                         "outcome, one of 'Arrested', 'Killed', 'Injured', or 'Unharmed'",
+                                         "participant category being 'Victim' or 'Subject-Suspect'",
+                                         "links to online news stories concerning incident",
+                                         "state house district",
+                                         "state senate district",
+                                         "full address", "whether the victim was killed or not", "whether the victim was killed or not as a string", "the year of the incident"),
+                         Type = map_chr(gunDataT, .f = function(x){typeof(x)[1]}),
+                         Class = map_chr(gunDataT, .f = function(x){class(x)[1]}))
+```
+
+
+```{r Initializing Dict}
+#Initialize dictionary
+flextable::flextable(dataDictionary, cwidth = 2)
+```
+
+
+## Data Cleaning
+
+```{r Data Cleaning}
 
 #Remove years with incomplete data
 gunDataF <- gunDataT %>% filter(year != 2013 & year != 2018)
@@ -134,8 +166,40 @@ stateVictims <- gunData %>%
   summarize(totalKilled = sum(n_killed), totalInjured = sum(n_injured))
 ```
 
+```{r New df with monthly death totals}
+monthVictims <- gunDataF %>%
+  group_by(month_name, year) %>% 
+  summarize(totalKilled = sum(n_killed), totalInjured = sum(n_injured))
+```
 
-## Creating Tables
+```{r}
+#Turn year variable into factor type
+monthVictims$year <- as.character(monthVictims$year)
+```
+
+```{r USA geometry import}
+state_shape <- tigris::states(cb = TRUE, year = 2021)
+```
+
+```{r Merging shape data with gunFatal data}
+gunCensusFatal2017 <- gunStateFatal2017 %>% left_join(state_shape,
+                                             by = c('state' = 'NAME'))
+```
+
+## EDA
+
+### Summary Stats
+
+```{r nkilled summary}
+#Summary statistics for number of people killed
+gunData %>% pull(n_killed) %>% summary()
+```
+
+```{r ninjured summary}
+#Summary statistics for number of people injured
+gunData %>% pull(n_injured) %>% summary()
+```
+### Creating Tables
 ```{r Table for top 10 states in 2017 with highest median poverty rate and listed median income and pop}
 top10MedPov <- censusDataStates2017 %>% select(state, prop_poverty, population, median_income) %>% arrange(desc(prop_poverty)) %>% 
   slice_head(n = 10)
@@ -162,7 +226,7 @@ top10MostDiverseTable %>% set_header_labels(state = "State", prop_diverse = "Pro
 
 
 
-## Creating a GGplot visualization of a bar chart with the highest proportion of incidents resulting in fatalities
+### Data Visualizations
 
 ```{r 10 Highest props of incidents that resulted in fataities} 
 stateFatalAvg2017 %>% arrange(desc(propFatal)) %>%
@@ -175,21 +239,6 @@ stateFatalAvg2017 %>% arrange(desc(propFatal)) %>%
   labs(title = "States with Highest Proportion of Gun Violence Incidents Resulting in Fatalities (2014-2017)", x = "State", y = "Proportion of Fatalities", caption = "Data Source: Gun Violence Archive (GVA)")
 ```
 
-## New Dataframe with Monthly Death Totals
-```{r New df with monthly death totals}
-monthVictims <- gunDataF %>%
-  group_by(month_name, year) %>% 
-  summarize(totalKilled = sum(n_killed), totalInjured = sum(n_injured))
-```
-
-```{r}
-#Turn year variable into factor type
-monthVictims$year <- as.character(monthVictims$year)
-```
-
-
-
-## Num People Killed by Month 
 ```{r GGPlot Num People Killed by month}
 #Number of people killed in shootings by month per year
 monthVictims %>% ggplot(aes(x = month_name,
@@ -209,20 +258,7 @@ monthVictims %>% ggplot(aes(x = month_name,
 ```
 
 
-## Fetching and Importing State Shape Data
 
-```{r }
-state_shape <- tigris::states(cb = TRUE, year = 2021)
-```
-
-```{r Merging shape data with gunFatal data}
-gunCensusFatal2017 <- gunStateFatal2017 %>% left_join(state_shape,
-                                             by = c('state' = 'NAME'))
-```
-
-
-
-## Creating choropleth map for gun incidents per 100,000 people
 ```{r Choropleth map gun incidents per 100,000 people}
 # Create new metric for gun incidents per 100,000 people
 gunCensusFatal2017 <- gunCensusFatal2017 %>% mutate(newPop = totalPopulation / 100000)
@@ -246,49 +282,20 @@ incidentGG <- ggMapDataFix %>%
 
 incidentGG
 ```
+```{r Scatterplot of the total gun violence incidents by population}
+scatter <- gunCensusFatal2017 %>% ggplot(aes(x = totalPopulation, y = totalIncidents, label = state)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, size = 1) +
+  labs(title = "Gun Violence Incidents vs Population by State",
+  x = "Population",
+  y = "Total Gun Violence Incidents",
+  caption = "Data Source: ") +
+  theme_bw()
 
-## Creating Data Dictionary
-```{r Data Dictionary}
-# Creating data dictionary. 
-dataDictionary <- tibble(Variable = colnames(gunDataT),
-                         Description = c("gunviolencearchive.org ID for incident",
-                                         "date of occurrence",
-                                         "state",
-                                         "city or county",
-                                         "address where incident took place",
-                                         "number of people killed",
-                                         "number of people injured",
-                                         "link to gunviolencearchive.org webpage containing details of incident",
-                                         "link to online news story concerning incident",
-                                         "ignore, always False",
-                                         "Congressional district",
-                                         "gun stolen or not, e.g. 'Unknown' or 'Stolen'",
-                                         "description of gun type",
-                                         "list of incident characteristics",
-                                         "latitude of location",
-                                         "description of location where incident took place",
-                                         "longitude of location",
-                                         "number of guns involved",
-                                         "additional notes about the incident",
-                                         "participant age",
-                                         "participant description of age group, e.g. 'Adult 18+'",
-                                         "participant gender being 'Male' or 'Female'",
-                                         "participant name",
-                                         "relationship of participant to other participants",
-                                         "outcome, one of 'Arrested', 'Killed', 'Injured', or 'Unharmed'",
-                                         "participant category being 'Victim' or 'Subject-Suspect'",
-                                         "links to online news stories concerning incident",
-                                         "state house district",
-                                         "state senate district",
-                                         "full address", "whether the victim was killed or not", "whether the victim was killed or not as a string", "the year of the incident"),
-                         Type = map_chr(gunDataT, .f = function(x){typeof(x)[1]}),
-                         Class = map_chr(gunDataT, .f = function(x){class(x)[1]}))
+# Convert ggplot2 plot to interactive plot using ggplotly
+ggplotly(scatter, tooltip = c("state", "totalPopulation", "totalIncidents"))
 ```
 
 
-```{r Initializing Dict}
-#Initialize dictionary
-flextable::flextable(dataDictionary, cwidth = 2)
-```
 
 
