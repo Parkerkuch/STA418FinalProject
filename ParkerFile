@@ -26,6 +26,9 @@ library(plotly)
 
 ## Import Data
 
+For our project, we decided to work with the Gun Violence data and the US Census data. We thought there would be some interesting relationships we could explore with these 2 datasets. W
+
+We first must import the data.
 ```{r Importing Data}
 #GunData
 gunData <- data.table::fread("gunViolenceFull.csv")
@@ -36,18 +39,24 @@ censusData <- data.table::fread('https://raw.githubusercontent.com/dilernia/STA4
 
 ## Creating Data Dictionary
 
+Next, we will include data dictionaries for the base of each of the datasets.
+
+We decided to add a variable for detecting the type of incident in the gun violence data.
 ```{r Creating vars for type of incident}
 stateCount <- gunData %>% mutate(fatal = n_killed > 0) %>% 
   mutate(type_harm = ifelse(fatal == FALSE & n_injured == 0, "Unharmed", 
                        ifelse(fatal ==  TRUE, "Killed", "Injured")))
 ```
 
+We would also like the dates to be formatted properly for better analysis.
 ```{r Formatting Dates}
 #New dataset for properly formated dates
 gunDataT <- stateCount %>% mutate(year = lubridate::year(date)) 
 ```
 
-```{r Data Dictionary}
+
+The data dictionary for the gun violence data, after a few additonal vars and transformations.
+```{r Gun Violence Data Dictionary}
 # Creating data dictionary. 
 dataDictionary <- tibble(Variable = colnames(gunDataT),
                          Description = c("gunviolencearchive.org ID for incident",
@@ -84,14 +93,55 @@ dataDictionary <- tibble(Variable = colnames(gunDataT),
                          Class = map_chr(gunDataT, .f = function(x){class(x)[1]}))
 ```
 
+```{r US Census Data Dictionary}
+# Creating data dictionary.
+dataDictionary2 <- tibble(Variable = colnames(censusData),
+                         Description = c("geographic region",
+                                         "year",
+                                         "population",
+                                         "median income in dollars",
+                                         "median monthly housing costs for homeowners in dollars",
+                                         "median monthly rent costs for renters in dollars",
+                                         "proportion of people who are female",
+                                         "proportion of people who are male",
+                                         "proportion of people who are white alone",
+                                         "proportion of people who are black or African American alone",
+                                         "proportion of people who are American Indian and Alaska Native alone",
+                                         "proportion of people who are Asian alone",
+                                         "proportion of people who are Native Hawaiian and Other Pacific Islander alone",
+                                         "proportion of people who are some other race alone",
+                                         "proportion of people who are two or more races",
+                                         "proportion of people 25 and older whose highest education-level is high school",
+                                         "proportion of people 25 and older whose highest education-level is a GED",
+                                         "proportion of people 25 and older whose highest education-level is some, but less than 1 year of college",
+                                         "proportion of people 25 and older whose highest education-level is greater than 1 year of college but no degree",
+                                         "proportion of people 25 and older whose highest education-level is an Associates degree",
+                                         "proportion of people 25 and older whose highest education-level is a Bachelors degree",
+                                         "proportion of people 25 and older whose highest education-level is a Masters degree",
+                                         "proportion of people 25 and older whose highest education-level is a Professional degree",
+                                         "proportion of people 25 and older whose highest education-level is a Doctoral degree",
+                                         "proportion of people 25 and older living in poverty, defined by the Census Bureau as having an income below the poverty threshold for their family size."),
+                         Type = map_chr(censusData, .f = function(x){typeof(x)[1]}),
+                         Class = map_chr(censusData, .f = function(x){class(x)[1]}))
+```
 
-```{r Initializing Dict}
+
+```{r Initializing Dict2}
+#Initialize dictionary2
+flextable::flextable(dataDictionary2, cwidth = 2)
+```
+
+
+```{r Initializing Gun Violence Dict}
 #Initialize dictionary
 flextable::flextable(dataDictionary, cwidth = 2)
 ```
 
 
 ## Data Cleaning
+
+
+After previewing the data, we noticed that there were definitely some additional variables we want to add. We also noticed that a lot of the data is a bit messy, and could use some tidying and formatting.
 
 ```{r Data Cleaning}
 
@@ -102,6 +152,7 @@ gunDataF <- gunDataT %>% filter(year != 2013 & year != 2018)
 gunDataF <- gunDataF %>% mutate(month = lubridate::month(date))
 gunDataF <- gunDataF %>% mutate(month_name = month(date, label = TRUE))
 
+#Selecting important vars
 gunDataF2 <- gunDataF %>% select(date, year, month_name, state, city_or_county, n_killed, n_injured, incident_characteristics, participant_age_group, participant_gender, participant_type, type_harm)
 
 #df for state num sums
@@ -133,6 +184,7 @@ propFatal = round(totalKilled/totalIncidents, 3),
 propInjured = round(totalInjured/totalIncidents, 3), 
 propUnharmed = round(totalUnharmed/totalIncidents, 3))
 
+#Averaging fatal incident proportions in 2017
 stateFatalAvg2017 <- stateGunSums %>% group_by(state) %>% filter(year == 2017) %>% 
   summarize(totalIncidents = totalIncidents, propFatal = propFatal)
 
@@ -145,17 +197,23 @@ censusDataF <- censusData %>% separate(col = county_state, into = c("county", "s
 # remove the first character (space) from the strings column (stringr)
 censusDataF <- censusDataF %>% mutate(state = str_sub(state, start = 2))
 
+#filtering 2017 data
 census2017 <- censusDataF %>% filter(year == 2017)
+
+#summarizing population
 census2017Pop <- census2017 %>% group_by(state) %>% summarize(totalPopulation = sum(population))
+
+#getting rid of na's
 census2017Pop <- census2017Pop %>% drop_na()
 
-
+#Joining fatal average data with population data
 gunStateFatal2017 <- stateFatalAvg2017 %>% left_join(census2017Pop, by = 'state')
 
 
 #Making df with just state metrics for census data 2017
 censusDataStates <- censusDataF %>% filter(is.na(state) == TRUE) %>% select(-state) %>% rename(state = county) %>% filter(year > 2013 & year < 2018)
 
+#getting rid of years that are not 2017, and also puerto rico
 censusDataStates2017 <- censusDataStates %>% filter(year == 2017, state != "Puerto Rico")
 
 ```
@@ -188,18 +246,25 @@ gunCensusFatal2017 <- gunStateFatal2017 %>% left_join(state_shape,
 
 ## EDA
 
+For our EDA, there were a lot of relationships to analyze. We were most interested in gun violence data by population in the census data, so we explored a few relationships in that regard. In particular, we were interested in seeing if certain states had more gun violence than others based on various data in the census data. 
 ### Summary Stats
 
 ```{r nkilled summary}
 #Summary statistics for number of people killed
 gunData %>% pull(n_killed) %>% summary()
 ```
+We can see that, as expected, the majority of incidents did not result in fatalities. However, we can see the max is 50, presumably from some mass shooting within the years of the data set.
+
 
 ```{r ninjured summary}
 #Summary statistics for number of people injured
 gunData %>% pull(n_injured) %>% summary()
 ```
+Additionally, we can see the same is true as killed as for injured, with the one outlier presumably being another mass shooting. 
+
 ### Creating Tables
+
+We wanted to make a table that displayed the highest median poverty rate states, and also display median income. 
 ```{r Table for top 10 states in 2017 with highest median poverty rate and listed median income and pop}
 top10MedPov <- censusDataStates2017 %>% select(state, prop_poverty, population, median_income) %>% arrange(desc(prop_poverty)) %>% 
   slice_head(n = 10)
@@ -211,22 +276,57 @@ top10MedPovTable %>% set_header_labels(state = "State", prop_poverty = "Proporti
 
 ```
 
-```{r Table for top 10 most diverse states}
-censusDataStates2017 <- censusDataStates2017 %>% mutate(prop_diverse = 1 - prop_white)
+We can see that Mississippi had the highest proportion of poverty in 2017, and also a relatively low median income. One interesting thing to note is Washington DC. Despite having a median income of $82, 372, the poverty rate is still 0.1664.
 
-top10MostDiverse <- censusDataStates2017 %>% select(state, population, prop_diverse) %>% 
-  arrange(-prop_diverse) %>% 
+
+```{r Table for top 10 most diverse states}
+censusDataStates2017 <- censusDataStates2017 %>% mutate(prop_notWhite = 1 - prop_white)
+
+top10MostEthnic <- censusDataStates2017 %>% select(state, population, prop_notWhite) %>% 
+  arrange(-prop_notWhite) %>% 
   slice_head(n = 10)
 
-top10MostDiverseTable <- flextable(top10MostDiverse)
+top10MostEthnicTable <- flextable(top10MostEthnic)
 
 
-top10MostDiverseTable %>% set_header_labels(state = "State", prop_diverse = "Proportion Diverse", population = "Population") %>% set_caption("Table 2: Top 10 Most Diverse States in the US (2017)")
+top10MostEthnicTable %>% set_header_labels(state = "State",prop_notWhite = "Proportion Non-White", population = "Population") %>% set_caption("Table 2: Top 10 Most Non-White States in the US (2017)")
 ```
+We were also curious about state diversity, or rather what states in the US are the most 'non-white'. This makes sense, with Hawaii being the least white state. However, we were surprised to see Maryland and not see Texas on the list.
 
 
 
 ### Data Visualizations
+
+Firstly, we were curious about visualizing the distribution of types of gun violence incidents in 2017. We decided to make a pie chart, with each slice being Killed, Injured, or Unharmed.
+
+```{r Getting a df with the total killed, injured, and unharmed in 2017}
+statePie <- stateGun2 %>% filter(year == 2017) %>% select(totalKilled, totalInjured, totalUnharmed)
+
+totKilled <- sum(statePie$totalKilled)
+totInjured <- sum(statePie$totalInjured)
+totUnharmed <- sum(statePie$totalUnharmed)
+
+pieVec <- c(totKilled, totInjured, totUnharmed)
+
+pieVec
+
+pieDF <- data.frame(
+  TypeHarm = c("Killed", "Injured", "Unharmed"),
+  value = pieVec
+)
+
+pieDF %>% ggplot(aes(x = '', y = value, fill = TypeHarm)) +
+  geom_bar(stat = 'identity', width = 1, color = 'white') +
+  coord_polar('y', start = 0) +
+  scale_color_viridis_d() +
+  labs(title = 'Distribution of type of gun violence incidents, 2017',
+       caption = 'Data Source: Gun Violence Archive (GVA)') +
+  theme_void()
+```
+We can see that out of all incidents, the type with the most incidents is unharmed, closely followed by injured, and then last killed.  
+
+
+We next wanted to visualize the states with the highest proportion of incidents that resulted in fatalities. We did this proportionally in order to adjust for population of the state. 
 
 ```{r 10 Highest props of incidents that resulted in fataities} 
 stateFatalAvg2017 %>% arrange(desc(propFatal)) %>%
@@ -238,7 +338,10 @@ stateFatalAvg2017 %>% arrange(desc(propFatal)) %>%
         legend.position = "none") +
   labs(title = "States with Highest Proportion of Gun Violence Incidents Resulting in Fatalities (2014-2017)", x = "State", y = "Proportion of Fatalities", caption = "Data Source: Gun Violence Archive (GVA)")
 ```
+From the bar graph, we can see that Arizona was the state with the highest proportion of fatal gun violence incidents in 2017. This was intriguing, considering that the fatality rate was almost 50%. We presume this may have something to do with the type of gun violence incidents that occur in AZ, and maybe there is less unorganized gang violence and more organized, planned out crimes. It is also worth noting that Arizona did not have a high total amount of incidents, at only 587.
 
+
+We were also curious in seeing if certain months had a higher amount of people killed than others. For this, we used data over a 4 year span (2014-2017).
 ```{r GGPlot Num People Killed by month}
 #Number of people killed in shootings by month per year
 monthVictims %>% ggplot(aes(x = month_name,
@@ -257,8 +360,10 @@ monthVictims %>% ggplot(aes(x = month_name,
   ylim(0,NA)
 ```
 
+We can see from the output that Feburary seems to be the month with the lowest amount of fatalities, while it appears that the summer months have the highest amount of fatalities. This makes sense, as we assume that in winter states, more people would stay inside and be less active in the winter, resulting in less incidents. 
 
 
+We also wanted to map gun incidents to the US. In this graph, we mapped the gun incidents per 100,000 people to adjust for population. 
 ```{r Choropleth map gun incidents per 100,000 people}
 # Create new metric for gun incidents per 100,000 people
 gunCensusFatal2017 <- gunCensusFatal2017 %>% mutate(newPop = totalPopulation / 100000)
@@ -276,12 +381,17 @@ ggMapDataFix <- ggMapData_sf %>%
 incidentGG <- ggMapDataFix %>%
   ggplot(aes(fill = normalizedInc)) +
   geom_sf() +
-  scale_fill_gradient(low = "white", high = "dodgerblue") +
+  scale_fill_gradient(low = "white", high = "red4") +
   labs(title = "Gun incidents per 100,000 People by State, 2017", fill = "Gun Incidents per 100,000 people") +
   theme_void()
 
 incidentGG
 ```
+
+We can see that a few states with the highest incidents/100,000 people are Mississippi, South Dakota and Alaska, while Texas, Arizona, Hawaii, Utah, and New York are amongst the lowest.
+
+
+We next wanted to see if there was some sort of correlation between total gun violence and population, since we assume that as population increases, total gun violence should also increase.
 ```{r Scatterplot of the total gun violence incidents by population}
 scatter <- gunCensusFatal2017 %>% ggplot(aes(x = totalPopulation, y = totalIncidents, label = state)) +
   geom_point() +
@@ -290,12 +400,14 @@ scatter <- gunCensusFatal2017 %>% ggplot(aes(x = totalPopulation, y = totalIncid
   x = "Population",
   y = "Total Gun Violence Incidents",
   caption = "Data Source: ") +
+  scale_x_continuous(labels = scales::number_format(scale = 1e-6)) +
+  scale_y_continuous(breaks = c(0, 1000, 2000, 3000, 4000, 5000)) +
   theme_bw()
 
 # Convert ggplot2 plot to interactive plot using ggplotly
 ggplotly(scatter, tooltip = c("state", "totalPopulation", "totalIncidents"))
 ```
 
-
+From the scatterplot, we can see that our initial hypothesis was true, and that as population increases, total gun violence does tend to increase. There are a few outliers though. For one, Illinois has the highest total amount of gun violence, yet they are the 6th most populated state. This means Illinois has a very high relative proportion of gun violence vs population. On the other hand, Arizona has a very low amount of gun violence for their population group. This is interesting considering that above, we saw that almost 50% of Arizona's gun violence incidents result in fatalities. 
 
 
